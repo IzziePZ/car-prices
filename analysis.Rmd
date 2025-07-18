@@ -1,0 +1,265 @@
+---
+title: "Project 1"
+author: "Julian Izquierdo"
+date: "2024-11-15"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+```{r}
+
+knitr::opts_chunk$set(message=FALSE, warning=FALSE)
+```
+
+
+# Introduction
+
+For this project, we will use the **Car Prices** data set from Kaggle, which provides a comprehensive collection of information about sales transactions for various vehicles. This data set includes details such as the year, make, model, trim, body type, transmission type, VIN (Vehicle Identification Number), state of registration, condition rating, odometer reading, exterior and interior colors, seller information, Manheim Market Report (MMR) values, selling prices, and sale dates.
+
+### Objectives
+
+-   Identify the most and least popular cars, categorized by brand and body type.
+-   Analyze the correlation between selling price and mileage.
+-   Provide actionable insights for investments and strategies to improve sales of less popular cars.
+
+```{r, echo=FALSE, comment=NA}
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(readr)
+library(plotly)
+library(stringr)
+```
+
+## 1. Data Inspection and Cleaning
+
+### Load Data and inspect the head.
+
+```{r, echo=FALSE}
+# Load the dataset
+df <- read.csv("car_prices.csv")
+
+head(df)
+
+#inspect dataset for cleaning
+print(unique(df$make))
+```
+
+## Clean the Dataset
+
+After inspection, it is evident that some brands are inconsistently named, and body types for trucks are missing. To address these issues we need to:
+
+-   Normalize brand names by converting everything to lower case.
+-   Add "truck" as a body type and add the corresponding vehicles to their respective brands for a more accurate count.
+-   Remove unnecessary columns for our analysis.
+
+```{r}
+
+#Convert all makes to lower for consistency
+df <- df%>%
+  mutate(make = str_to_lower(make))
+
+#Implement body type of truck to dataset
+df <- df %>%
+  mutate(body = case_when(
+    make %in% c("ford truck", "chev truck", "gmc truck","mazda tk","hyundai tk", "dodge tk", "ford tk") ~ "truck",
+    TRUE ~ body
+  ))
+
+
+make_replacements <- c(
+  "mercedes-benz" = "mercedes",
+  "mercedes-b" = "mercedes",
+  "landrover" = "land rover",
+  "vw" = "volkswagen",
+  "mazda tk" = "mazda",
+  "hyundai tk" = "hyundai",
+  "gmc truck" = "gmc",
+  "chev truck" = "chevrolet",
+  "ford tk" = "ford",
+  "ford truck" = "ford",
+  "dot" = "dodge",
+  "dodge tk" = "dodge"
+)
+
+#normalize data to have one unique brand
+df <- df %>%
+  mutate(make = recode(make, !!!make_replacements))
+
+
+# Clean the dataset
+cleaned_df <- df %>%
+  filter(!is.na(make) & make != "") %>% 
+  select(-vin, -transmission, -state, -seller, -saledate)
+
+unique(cleaned_df$make)
+
+# Preview cleaned dataset
+head(cleaned_df)
+
+```
+
+# 2. Top 10 Most Popular Car Brands
+
+To understand which car brands are the most popular, I grouped the data by brand and counted the number of vehicles sold. We will only be using the top 10 most popular car brands due to the high volume of data and to only concentrate on those.
+
+This bar chart shows the top 10 car brands based on sales volume. Brands like Ford or Chevrolet dominate the market, making them "safe bets" for businesses to invest in.
+
+```{r}
+# Group by make and count the number of vehicles sold
+top10_most_cars_brand <- cleaned_df %>%
+  group_by(make) %>%
+  summarize(number_vehicles = n()) %>%
+  arrange(desc(number_vehicles)) %>%
+  slice_head(n = 10)
+
+# Bar plot
+ggplot(top10_most_cars_brand, aes(x = reorder(make, -number_vehicles), y = number_vehicles, fill = make)) +
+  geom_bar(stat = "identity") +
+  labs(
+    title = "Top 10 Most Popular Car Brands",
+    x = "Car Brand",
+    y = "Number of Vehicles Sold"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+# 3. Car Sales by Year
+
+### Distribution of Cars Sold by Manufacturing Year
+
+This chart shows which car years sell the most. Not surprisingly, newer models are the most popular, but some older ones still sell pretty well.
+
+The challenge for businesses is figuring out what to stock. The takeaway here is to prioritize newer models but also keep a few older ones that people are still buying.
+
+```{r}
+# Distribution of cars sold by manufacturing year
+ggplot(cleaned_df, aes(x = year)) +
+  geom_bar(fill = "blue") +
+  labs(
+    title = "Car Sales by Year",
+    x = "Year of Manufacture",
+    y = "Number of Cars Sold"
+  ) +
+  theme_minimal()
+
+```
+
+# 4. Selling Price Difference Analysis
+
+A key insight from the data is the connection between a car's mileage and its selling price, shown in this scatter plot. As you can see, cars with higher mileage tend to sell for less. This makes sense since more mileage usually means more wear and tear, lowering the car's value. Knowing this helps businesses price used cars competitively while staying realistic about their condition.
+
+```{r}
+# Scatter plot of selling price vs odometer
+ggplot(cleaned_df, na.rm=TRUE, aes(x = odometer, y = sellingprice)) +
+  geom_point(alpha = 0.6, color = "darkblue") +
+  labs(
+    title = "Selling Price vs. Mileage",
+    x = "Mileage (Odometer Reading)",
+    y = "Selling Price"
+  ) +
+  theme_minimal()
+```
+
+# 5. Selling Price Difference MMR & Car Make
+
+The problem is understanding how a car's selling price compares to its market value (MMR), which can impact profitability. This bar chart highlights the average price differences for the top 10 car brands. For instance, brands like Aston Martin or Lamborghini often sell above market value, while Lexus or Honda typically sell below it. The solution is to use this information to focus on brands with higher profit margins and adjust sales strategies to maximize earnings.
+
+```{r}
+# Add difference_mmr_selling column
+cleaned_df <- cleaned_df %>%
+  filter(make!='airstream')%>%
+  mutate(difference_mmr_selling = sellingprice - mmr)
+
+# Group by car make and calculate average price difference
+avg_price_diff_per_make <- cleaned_df %>%
+  group_by(make) %>%
+  summarize(avg_price_diff = mean(difference_mmr_selling, na.rm = TRUE)) %>%
+  arrange(desc(avg_price_diff))%>%
+  head(10)
+
+# Bar plot for average price difference by car make
+ggplot(avg_price_diff_per_make, aes(x = reorder(make, -avg_price_diff), y = avg_price_diff, fill = make)) +
+  geom_bar(stat = "identity") +
+  labs(
+    title = "Average Selling Price Difference by Car Make",
+    x = "Car Make",
+    y = "Average Price Difference (Selling Price - MMR)"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+```
+
+# 6. Selling Price, Mileage, and Year
+
+The problem is finding patterns in selling price, mileage, and production year without overwhelming the analysis. To solve this, I created a 3D scatter plot for the top 10 car brands (Data set is too big to have it all plotted), combining these factors. This interactive visualization shows clear trends, like newer cars with lower mileage selling for higher prices. Focusing on the top brands makes the data manageable while still providing valuable insights into key patterns for future investements.
+
+```{r}
+
+top10_make <- cleaned_df%>%
+  count(make, sort = TRUE)%>%
+  slice_head(n=10)%>%
+  pull(make)
+
+filtered_df <- cleaned_df %>%
+  filter(make %in% top10_make)
+
+
+# Create the 3D scatter plot for the top 10 brands
+plot_3d <- plot_ly(
+  filtered_df,
+  x = ~odometer,
+  y = ~sellingprice,
+  z = ~year,
+  color = ~make,  # Different colors for each brand
+  type = 'scatter3d',
+  mode = 'markers',
+  marker = list(size = 3)
+) %>%
+  layout(
+    title = "3D Scatter Plot: Selling Price, Odometer, and Year (Top 10 Brands)",
+    scene = list(
+      xaxis = list(title = "Odometer"),
+      yaxis = list(title = "Selling Price"),
+      zaxis = list(title = "Year")
+    )
+  )
+
+# Display the plot
+plot_3d
+
+```
+
+# 7. Average Selling Price by Make
+
+The problem is deciding whether to focus on selling high-end cars with bigger profits or affordable cars with higher sales volume. To address this, I analyzed the average selling price for each car brand, I had to rotate the make names so all brands would fit in. This bar chart shows that brands like Rolls Royce and Ferrari sell for much higher prices, while others are more budget-friendly. These insights help businesses decide whether to prioritize luxury brands for higher margins or affordable cars for greater sales volume.
+
+```{r}
+# Calculate average selling price by car make
+avg_price_per_make <- cleaned_df %>%
+  group_by(make) %>%
+  summarize(average_price = mean(sellingprice, na.rm = TRUE)) %>%
+  arrange(desc(average_price))
+
+ggplot(avg_price_per_make, aes(x = reorder(make, -average_price), y = average_price, fill = make)) +
+  geom_bar(stat = "identity") +
+  labs(
+    title = "Average Selling Price by Car Make",
+    x = "Car Make",
+    y = "Average Selling Price"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)
+  )
+```
+
+## Conclusion
+
+In conclusion, this analysis provides valuable insights for business owners in deciding their focus. They can choose to prioritize high-volume, lower-priced brands like Honda or Mitsubishi, which will likely lead to more sales but lower profit margins. Alternatively, they can opt for premium brands like Aston Martin or Lamborghini, which may not sell as frequently but offer significantly higher profit potential. Additionally, focusing on cars with lower mileage is advisable, as these retain their value better. Finally, consistently investing in brands like Ford or Chevrolet could be a safe strategy, given their reliability and popularity.
